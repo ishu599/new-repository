@@ -1,0 +1,68 @@
+name: Full DevOps Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  ci-cd:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      packages: write   # IMPORTANT for GHCR
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # -------------------------
+      # RUN APPLICATION (CI PART)
+      # -------------------------
+      - name: Run Python App
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python src/main.py
+
+      # -------------------------
+      # CD PART (COMMIT REPORT)
+      # -------------------------
+      - name: Commit report
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add reports/github-health-report.md
+
+          git diff --staged --quiet || git commit -m "auto: update report"
+
+          git push
+
+      # -------------------------
+      # DOCKER BUILD
+      # -------------------------
+      - name: Build Docker image
+        run: |
+          docker build -t ghcr.io/${{ github.repository_owner }}/github-health-generator:latest .
+
+      # -------------------------
+      # LOGIN TO GHCR
+      # -------------------------
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # -------------------------
+      # PUSH IMAGE
+      # -------------------------
+      - name: Push Docker image
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/github-health-generator:latest
